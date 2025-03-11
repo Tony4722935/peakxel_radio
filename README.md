@@ -18,7 +18,7 @@ First you need to build your docker image and then you can deploy.
 
 ```bash
   docker build -t peakxel_radio .
-  docker run -e YOUR_BOT_TOKEN peakxel_radio
+  docker run -d --restart unless-stopped -e DISCORD_BOT_TOKEN="your_token_here" peakxel_radio
 ```
 ## Extra instructions
 
