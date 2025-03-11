@@ -36,6 +36,15 @@ for name, url in STREAMS.items():
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+@bot.tree.command(name="list", description="List all available streams")
+async def list_streams(interaction: discord.Interaction):
+    available_streams = [s for s in STREAMS.keys() if STREAMS[s] is not None]
+    if available_streams:
+        streams_list = "\n".join(available_streams)
+        await interaction.response.send_message(f"Available streams:\n{streams_list}", ephemeral=True)
+    else:
+        await interaction.response.send_message("No available streams found.", ephemeral=True)
+
 @bot.tree.command(name="play", description="Play a stream in your voice channel")
 @app_commands.describe(stream="Choose a stream")
 async def play(interaction: discord.Interaction, stream: str):
@@ -43,7 +52,7 @@ async def play(interaction: discord.Interaction, stream: str):
     if stream not in STREAMS or STREAMS[stream] is None:
         valid = ", ".join([s for s in STREAMS.keys() if STREAMS[s] is not None])
         await interaction.response.send_message(
-            f"Invalid stream. Valid options: {valid}", ephemeral=True
+            f"Invalid stream. Use `/list_streams` to see available options.", ephemeral=True
         )
         return
 
