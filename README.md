@@ -5,7 +5,7 @@ A Discord Music Bot solution for playing HLS streams.
 
 I used AzuraCast to create my own HLS streams.
 
-Place your .pls files in the root path of this project, you will need to change the python code to match the name of your .pls files.
+Place your .pls files in the root path of this project
 
 
 
