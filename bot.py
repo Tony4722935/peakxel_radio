@@ -36,6 +36,10 @@ for name, url in STREAMS.items():
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Keep track of default volume per guild (0.0 to 2.0). Defaults to 0.5 (50%).
+DEFAULT_VOLUME = 0.5
+guild_volumes = {}
+
 @bot.tree.command(name="list", description="List all available streams")
 async def list_streams(interaction: discord.Interaction):
     available_streams = [s for s in STREAMS.keys() if STREAMS[s] is not None]
@@ -52,7 +56,7 @@ async def play(interaction: discord.Interaction, stream: str):
     if stream not in STREAMS or STREAMS[stream] is None:
         valid = ", ".join([s for s in STREAMS.keys() if STREAMS[s] is not None])
         await interaction.response.send_message(
-            f"Invalid stream. Use `/list_streams` to see available options.", ephemeral=True
+            f"Invalid stream. Use `/list` to see available options.", ephemeral=True
         )
         return
 
@@ -67,14 +71,28 @@ async def play(interaction: discord.Interaction, stream: str):
     elif vc.channel != voice_channel:
         await vc.move_to(voice_channel)
 
-    ffmpeg_options = {'options': '-vn'}  # No video flag
     stream_url = STREAMS[stream]
-    source = discord.FFmpegPCMAudio(stream_url, **ffmpeg_options)
 
-    if vc.is_playing():
+    # FFmpeg reconnect and buffering options to reduce lag/interruptions
+    ffmpeg_before_options = (
+        "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+    )
+    ffmpeg_options = "-vn -bufsize 1024k"
+
+    # Create a PCM source and wrap it in a volume transformer
+    pcm_source = discord.FFmpegPCMAudio(
+        stream_url,
+        before_options=ffmpeg_before_options,
+        options=ffmpeg_options
+    )
+    volume = guild_volumes.get(interaction.guild.id, DEFAULT_VOLUME)
+    player = discord.PCMVolumeTransformer(pcm_source, volume=volume)
+
+    if vc.is_playing() or vc.is_paused():
         vc.stop()
-    vc.play(source)
-    await interaction.response.send_message(f"Now playing the **{stream}** stream.")
+    vc.play(player)
+
+    await interaction.response.send_message(f"Now playing the **{stream}** stream at {int(volume * 100)}% volume.")
 
 @bot.tree.command(name="stop", description="Stop playing and disconnect from the voice channel")
 async def stop(interaction: discord.Interaction):
@@ -85,6 +103,30 @@ async def stop(interaction: discord.Interaction):
     vc.stop()
     await vc.disconnect()
     await interaction.response.send_message("Disconnected from the voice channel.")
+
+@bot.tree.command(name="volume", description="Adjust the playback volume (0.0 to 2.0)")
+@app_commands.describe(level="Volume multiplier: 0.0 (mute) to 2.0 (200%)")
+async def volume(interaction: discord.Interaction, level: float):
+    vc = interaction.guild.voice_client
+    if vc is None or not vc.is_playing():
+        await interaction.response.send_message("Nothing is playing right now.", ephemeral=True)
+        return
+
+    if level < 0.0 or level > 2.0:
+        await interaction.response.send_message("Please provide a volume between 0.0 and 2.0.", ephemeral=True)
+        return
+
+    # Ensure the source is wrapped in a PCMVolumeTransformer
+    source = vc.source
+    if not isinstance(source, discord.PCMVolumeTransformer):
+        # If somehow it's not wrapped (unlikely), wrap it now
+        wrapped = discord.PCMVolumeTransformer(source, volume=level)
+        vc.source = wrapped
+    else:
+        source.volume = level
+
+    guild_volumes[interaction.guild.id] = level
+    await interaction.response.send_message(f"Volume set to {int(level * 100)}%.")
 
 @bot.event
 async def on_ready():
